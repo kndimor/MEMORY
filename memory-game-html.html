@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>משחק זיכרון</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #E6F3FF;
+            text-align: center;
+        }
+        #game-container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #game-board {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .card {
+            background-color: #FFA500;
+            border: 2px solid #8A2BE2;
+            border-radius: 5px;
+            height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .card.flipped {
+            background-color: #FF69B4;
+        }
+        .card.matched {
+            visibility: hidden;
+        }
+        button {
+            background-color: #8A2BE2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        input, select {
+            margin: 5px;
+            padding: 5px;
+        }
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+        .blink {
+            animation: blink 0.5s linear 3;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <h1>משחק זיכרון</h1>
+        <div id="setup">
+            <input type="text" id="game-name" placeholder="שם המשחק">
+            <select id="num-players" onchange="updatePlayerInputs()">
+                <option value="2">2 שחקנים</option>
+                <option value="3">3 שחקנים</option>
+                <option value="4">4 שחקנים</option>
+            </select>
+            <div id="player-names"></div>
+            <input type="text" id="words" placeholder="הכנס מילים מופרדות בפסיקים">
+            <button onclick="startGame()">התחל משחק</button>
+        </div>
+        <div id="game" style="display: none;">
+            <h2 id="current-player"></h2>
+            <div id="scores"></div>
+            <div id="game-board"></div>
+            <button onclick="resetGame()">משחק חדש</button>
+        </div>
+    </div>
+
+    <script>
+        let gameName, numPlayers, playerNames, words, cards, currentPlayer, scores, flippedCards;
+        let isProcessing = false;
+        let audioContext;
+
+        function updatePlayerInputs() {
+            const playerCount = parseInt(document.getElementById('num-players').value);
+            const playerNamesDiv = document.getElementById('player-names');
+            playerNamesDiv.innerHTML = '';
+            for (let i = 0; i < playerCount; i++) {
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.id = `player-${i}`;
+                input.placeholder = `שם שחקן ${i + 1}`;
+                playerNamesDiv.appendChild(input);
+            }
+        }
+
+        function startGame() {
+            gameName = document.getElementById('game-name').value || 'זיכרון';
+            numPlayers = parseInt(document.getElementById('num-players').value);
+            playerNames = [];
+            for (let i = 0; i < numPlayers; i++) {
+                const name = document.getElementById(`player-${i}`).value || `שחקן ${i + 1}`;
+                playerNames.push(name);
+            }
+            words = document.getElementById('words').value.split(',').map(w => w.trim()).filter(w => w);
+            
+            if (words.length < 2) {
+                alert('נא להוסיף לפחות 2 מילים למשחק');
+                return;
+            }
+
+            cards = [...words, ...words].sort(() => Math.random() - 0.5);
+            currentPlayer = 0;
+            scores = new Array(numPlayers).fill(0);
+            flippedCards = [];
+
+            document.getElementById('setup').style.display = 'none';
+            document.getElementById('game').style.display = 'block';
+            updateGameBoard();
+            updateScores();
+
+            // Initialize Audio Context
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        function updateGameBoard() {
+            const board = document.getElementById('game-board');
+            board.innerHTML = '';
+            cards.forEach((word, index) => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.textContent = gameName;
+                card.onclick = () => flipCard(index);
+                board.appendChild(card);
+            });
+            document.getElementById('current-player').textContent = `תור ${playerNames[currentPlayer]}`;
+        }
+
+        function updateScores() {
+            document.getElementById('scores').textContent = 
+                'ניקוד: ' + playerNames.map((name, index) => `${name}: ${scores[index]}`).join(' | ');
+        }
+
+        function flipCard(index) {
+            if (isProcessing || flippedCards.length === 2 || flippedCards.includes(index)) return;
+
+            const card = document.getElementById('game-board').children[index];
+            card.textContent = cards[index];
+            card.classList.add('flipped');
+            flippedCards.push(index);
+
+            if (flippedCards.length === 2) {
+                isProcessing = true;
+                setTimeout(checkMatch, 500);
+            }
+        }
+
+        function checkMatch() {
+            const [index1, index2] = flippedCards;
+            const card1 = document.getElementById('game-board').children[index1];
+            const card2 = document.getElementById('game-board').children[index2];
+            const match = cards[index1] === cards[index2];
+
+            if (match) {
+                playSound(true);
+                card1.classList.add('blink');
+                card2.classList.add('blink');
+                setTimeout(() => {
+                    card1.classList.remove('blink');
+                    card2.classList.remove('blink');
+                    card1.classList.add('matched');
+                    card2.classList.add('matched');
+                    scores[currentPlayer]++;
+                    updateScores();
+                    resetTurn();
+                }, 1500);
+            } else {
+                playSound(false);
+                setTimeout(() => {
+                    card1.classList.remove('flipped');
+                    card2.classList.remove('flipped');
+                    card1.textContent = gameName;
+                    card2.textContent = gameName;
+                    currentPlayer = (currentPlayer + 1) % numPlayers;
+                    document.getElementById('current-player').textContent = `תור ${playerNames[currentPlayer]}`;
+                    resetTurn();
+                }, 1500);
+            }
+        }
+
+        function resetTurn() {
+            flippedCards = [];
+            isProcessing = false;
+            
+            if (document.querySelectorAll('.matched').length === cards.length) {
+                const winner = scores.indexOf(Math.max(...scores));
+                setTimeout(() => {
+                    alert(`המשחק נגמר! המנצח הוא ${playerNames[winner]} עם ${scores[winner]} נקודות!`);
+                }, 500);
+            }
+        }
+
+        function resetGame() {
+            document.getElementById('setup').style.display = 'block';
+            document.getElementById('game').style.display = 'none';
+            isProcessing = false;
+        }
+
+        function playSound(isCorrect) {
+            if (isCorrect) {
+                // Simulate clapping sound
+                const clapDuration = 0.1;
+                const clapCount = 3;
+                for (let i = 0; i < clapCount; i++) {
+                    setTimeout(() => {
+                        const clap = audioContext.createOscillator();
+                        const clapGain = audioContext.createGain();
+                        clap.connect(clapGain);
+                        clapGain.connect(audioContext.destination);
+
+                        clap.type = 'triangle';
+                        clap.frequency.setValueAtTime(1000 + Math.random() * 500, audioContext.currentTime);
+                        clapGain.gain.setValueAtTime(0.1, audioContext.currentTime);
+                        clapGain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + clapDuration);
+
+                        clap.start();
+                        clap.stop(audioContext.currentTime + clapDuration);
+                    }, i * 150);
+                }
+            } else {
+                // Short, weak sound for incorrect match
+                const incorrectSound = audioContext.createOscillator();
+                const incorrectGain = audioContext.createGain();
+                incorrectSound.connect(incorrectGain);
+                incorrectGain.connect(audioContext.destination);
+
+                incorrectSound.type = 'sine';
+                incorrectSound.frequency.setValueAtTime(200, audioContext.currentTime);
+                incorrectGain.gain.setValueAtTime(0.05, audioContext.currentTime);
+                incorrectGain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.2);
+
+                incorrectSound.start();
+                incorrectSound.stop(audioContext.currentTime + 0.2);
+            }
+        }
+
+        // Initialize player inputs on page load
+        updatePlayerInputs();
+    </script>
+</body>
+</html>
